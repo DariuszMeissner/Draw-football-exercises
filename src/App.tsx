@@ -5,6 +5,10 @@ import { CanvasObject } from "./features/canvas/canvas-object/canvas-object";
 import { TYPES } from "./features/canvas/enums";
 import { BaseDrawOptionsInterface } from "./features/canvas/canvas-object/type";
 import { TextDrawOptionsInterface } from "./features/canvas/canvas-text/type";
+var htmlToPdfmake = require("html-to-pdfmake");
+var pdfMake = require("pdfmake/build/pdfmake");
+var pdfFonts = require("pdfmake/build/vfs_fonts");
+pdfMake.vfs = pdfFonts.pdfMake.vfs;
 
 function App() {
   const [isMousePressed, setMousePressed] = useState<boolean>(false);
@@ -17,6 +21,7 @@ function App() {
 
   useEffect(() => {
     reDraw();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [layers]);
 
   const setCanvasRef = useCallback((element: HTMLCanvasElement) => {
@@ -73,9 +78,9 @@ function App() {
 
   const onMouseDown = (event: React.MouseEvent) => {
     setMousePressed(true);
-    console.log(event);
 
     if (context) {
+      // find object in array, Class Layer
       const detectedLayer = layers.find((layer) => layer.isPointInside(event.pageX, event.pageY));
 
       if (detectedLayer) {
@@ -116,7 +121,8 @@ function App() {
     setMousePressed(false);
   };
 
-  const download = (e: React.MouseEvent) => {
+  const downloadImage = (e: React.MouseEvent) => {
+    // Generate image file from canvas
     const link = e.currentTarget;
     link.setAttribute("download", "canvas.jpeg");
     let imageUrl = context?.canvas.toDataURL("image/jpeg", 1.0);
@@ -125,18 +131,55 @@ function App() {
     if (imageUrl) {
       link.setAttribute("href", imageUrl);
     }
+  };
 
-    // // let blob = new Blob([dataUrl], {type: dataUrl.})
-    // if (e.target) {
-    //   const target = e.target as HTMLAnchorElement;
-    // }
+  const downloadPDF = (e: React.MouseEvent) => {
+    e.preventDefault();
+
+    // Generate pdf from html
+    // var val = htmlToPdfmake("<div><h1>title</h1></div>");
+    // var dd = {
+    //   content: [val],
+    // };
+
+    // Generate pdf
+    var dd = {
+      content: [
+        {
+          stack: [
+            "This header has both top and bottom margins defined",
+            { text: "This is a subheader", style: "subheader" },
+          ],
+          style: "header",
+        },
+      ],
+      styles: {
+        header: {
+          fontSize: 18,
+          bold: true,
+          alignment: "right",
+          margin: [0, 190, 0, 80],
+        },
+        subheader: {
+          fontSize: 14,
+        },
+        superMargin: {
+          margin: [20, 0, 40, 0],
+          fontSize: 15,
+        },
+      },
+    };
+    pdfMake.createPdf(dd).download();
   };
 
   return (
     <div>
-      <a href="download_link" onClick={download}>
-        download
+      <a href="download_link" onClick={downloadImage}>
+        download image
       </a>
+
+      <button onClick={downloadPDF}>download pdf</button>
+
       <canvas
         id="canvas-layer"
         ref={setCanvasRef}
