@@ -58,6 +58,25 @@ function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    if (appMode === 'image') {
+      restoreFirstKeyframe();
+    }
+  }, [appMode]);
+
+  const restoreFirstKeyframe = () => {
+    // Reset all objects to their first keyframe (if any)
+    setLayers((prev) =>
+      prev.map((obj) => {
+        if (obj.keyframes?.length > 0) {
+          const first = obj.keyframes[0];
+          return { ...obj, x: first.x, y: first.y };
+        }
+        return obj;
+      })
+    );
+  };
+
   const distance = (x1: number, y1: number, x2: number, y2: number) => Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
 
   const getClickedObject = (x: number, y: number) => {
