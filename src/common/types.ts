@@ -1,3 +1,9 @@
+export interface Keyframe {
+  time: number; // seconds
+  x: number;
+  y: number;
+}
+
 export interface BaseObject {
   id: number;
   name: string;
@@ -9,10 +15,10 @@ export interface BaseObject {
   width?: number;
   height?: number;
   keyframes: Keyframe[];
+  hidden?: boolean;
 }
 
-export interface Keyframe {
-  time: number; // seconds
-  x: number;
-  y: number;
+export interface ActiveKeyframe {
+  objId: number;
+  keyIndex: number;
 }

@@ -1,6 +1,6 @@
 import { MouseEvent, useEffect, useRef, useState } from 'react';
 import MultiTimeline from './components/MultiTimeline';
-import { BaseObject } from './common/types';
+import { ActiveKeyframe, BaseObject, Keyframe } from './common/types';
 
 type ObjectType = 'circle' | 'rectangle';
 type Mode = 'pointer' | 'circle' | 'rectangle';
@@ -18,10 +18,7 @@ function App() {
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [dragging, setDragging] = useState(false);
   const [currentXY, setCurrentXY] = useState<{ x: number; y: number } | null>(null);
-  const [keyFrameActive, setKeyFrameActive] = useState<{
-    objId: number;
-    keyIndex: number;
-  } | null>(null);
+  const [keyFrameActive, setKeyFrameActive] = useState<ActiveKeyframe | null>(null);
   const [mode, setMode] = useState<Mode>('pointer');
   const idRef = useRef(0);
   const backgroundColor = 'green';
@@ -131,29 +128,40 @@ function App() {
 
   const addObject = (type: ObjectType, x: number, y: number) => {
     idRef.current += 1;
-    const newObj: BaseObject =
-      type === 'circle'
-        ? {
-            id: idRef.current,
-            name: `Circle ${idRef.current}`,
-            type,
-            x,
-            y,
-            radius: 40,
-            color: '#ffffff',
-            keyframes: [],
-          }
-        : {
-            id: idRef.current,
-            name: `Rectangle ${idRef.current}`,
-            type,
-            x,
-            y,
-            width: 80,
-            height: 60,
-            color: '#ffffff',
-            keyframes: [],
-          };
+    let newObj: BaseObject;
+    const initFirstKeyFrame: Keyframe = { time: 0, x, y };
+    const initLastKeyFrame: Keyframe = { time: DURATION, x, y };
+
+    switch (type) {
+      case 'circle':
+        newObj = {
+          id: idRef.current,
+          name: `Circle ${idRef.current}`,
+          type,
+          x,
+          y,
+          radius: 40,
+          color: '#ffffff',
+          keyframes: [initFirstKeyFrame, initLastKeyFrame],
+        };
+        break;
+      case 'rectangle':
+        newObj = {
+          id: idRef.current,
+          name: `Rectangle ${idRef.current}`,
+          type,
+          x,
+          y,
+          width: 80,
+          height: 60,
+          color: '#ffffff',
+          keyframes: [initFirstKeyFrame, initLastKeyFrame],
+        };
+        break;
+      default:
+        break;
+    }
+
     setLayers((prev) => [...prev, newObj]);
   };
 
@@ -163,6 +171,8 @@ function App() {
     ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
     layers.forEach((obj) => {
+      if (obj.hidden) return; // skip invisible objects
+
       ctx.fillStyle = obj.color;
       ctx.beginPath();
 
@@ -262,13 +272,33 @@ function App() {
     setLayers((prev) =>
       prev.map((obj) => {
         const frames = obj.keyframes || [];
-        if (frames.length === 0) return obj;
-        if (time <= frames[0].time) return { ...obj, x: frames[0].x, y: frames[0].y };
-        if (time >= frames[frames.length - 1].time)
-          return { ...obj, x: frames[frames.length - 1].x, y: frames[frames.length - 1].y };
+        if (frames.length === 0) {
+          // No animation → always visible
+          return { ...obj, hidden: false };
+        }
 
-        let before = frames[0],
-          after = frames[frames.length - 1];
+        const firstFrame = frames[0];
+        const lastFrame = frames[frames.length - 1];
+
+        // 1️⃣ Before first keyframe → hidden
+        if (time < firstFrame.time) {
+          return { ...obj, hidden: true };
+        }
+
+        // 2️⃣ After last keyframe
+        if (time > lastFrame.time) {
+          // Hide if last keyframe does not reach timeline end
+          if (lastFrame.time < duration) {
+            return { ...obj, hidden: true };
+          } else {
+            // Stays visible at last position
+            return { ...obj, x: lastFrame.x, y: lastFrame.y, hidden: false };
+          }
+        }
+
+        // 3️⃣ Between keyframes → interpolate
+        let before = firstFrame;
+        let after = lastFrame;
         for (let i = 0; i < frames.length - 1; i++) {
           if (time >= frames[i].time && time <= frames[i + 1].time) {
             before = frames[i];
@@ -278,7 +308,10 @@ function App() {
         }
 
         const progress = (time - before.time) / (after.time - before.time || 1);
-        return { ...obj, x: before.x + (after.x - before.x) * progress, y: before.y + (after.y - before.y) * progress };
+        const x = before.x + (after.x - before.x) * progress;
+        const y = before.y + (after.y - before.y) * progress;
+
+        return { ...obj, x, y, hidden: false };
       })
     );
   };
@@ -403,12 +436,41 @@ function App() {
 
   const selectedObj = layers.find((o) => o.id === selectedId);
 
-  const onSelectKeyframe = (objId: number, keyIndex: number) => {
+  const onSelectKeyframeSetFirstFrame = (objId: number, keyIndex: number) => {
     const obj = layers.find((o) => o.id === objId);
     if (obj?.keyframes?.[keyIndex]) {
       const { x, y } = obj.keyframes[keyIndex];
       setLayers((prevLayers) => prevLayers.map((layer) => (layer.id === objId ? { ...layer, x, y } : layer)));
     }
+  };
+
+  // const removeKeyFrame = (objId: number, time: number) => {
+  //   setLayers((prevLayers) =>
+  //     prevLayers.map((layer) => {
+  //       if (objId !== layer.id) return layer;
+
+  //       const updateKeyframes = layer.keyframes.filter((kf) => kf.time !== time);
+  //       return { ...layer, keyframes: updateKeyframes };
+  //     })
+  //   );
+  // };
+
+  const onMoveKeyframeTime = (objId: number, keyIndex: number, newTime: number) => {
+    setLayers((prev) =>
+      prev.map((obj) => {
+        if (obj.id !== objId) return obj;
+        if (!obj.keyframes) return obj;
+
+        const updated = [...obj.keyframes];
+        const frame = { ...updated[keyIndex], time: newTime };
+        updated[keyIndex] = frame;
+
+        // Always sort after time change
+        updated.sort((a, b) => a.time - b.time);
+
+        return { ...obj, keyframes: updated };
+      })
+    );
   };
 
   return (
@@ -477,21 +539,20 @@ function App() {
         <div>
           <div style={{ marginBottom: 10 }}>
             <div>
-              {appMode === 'image' ? (
-                <button
-                  onClick={() => setAppMode('animation')}
-                  style={{ background: '#333', color: 'white', marginRight: 10 }}
-                >
-                  🎬 Enter Animation Mode
-                </button>
-              ) : (
-                <button
-                  onClick={() => setAppMode('image')}
-                  style={{ background: '#555', color: 'white', marginRight: 10 }}
-                >
-                  🖼 Exit Animation Mode
-                </button>
-              )}
+              <button
+                onClick={() => setAppMode('animation')}
+                style={{ background: '#333', color: 'white', marginRight: 10 }}
+                hidden={appMode !== 'image'}
+              >
+                🎬 Enter Animation Mode
+              </button>
+              <button
+                onClick={() => setAppMode('image')}
+                style={{ background: '#555', color: 'white', marginRight: 10 }}
+                hidden={appMode !== 'animation'}
+              >
+                🖼 Exit Animation Mode
+              </button>
             </div>
 
             <button onClick={applyPosition} style={{ marginLeft: 5 }} hidden={!keyFrameActive}>
@@ -554,12 +615,13 @@ function App() {
             time={animationTime}
             onTimeChange={setAnimationTime}
             onUpdateKeyframe={onUpdateKeyframe}
+            onMoveKeyframeTime={onMoveKeyframeTime}
             onMoveUp={moveLayerUp}
             onMoveDown={moveLayerDown}
             onDelete={deleteLayer}
             selectedId={selectedId}
             setSelectedId={setSelectedId}
-            onSelectKeyframe={onSelectKeyframe}
+            onSelectKeyframeSetFirstFrame={onSelectKeyframeSetFirstFrame}
           />
         </div>
       )}

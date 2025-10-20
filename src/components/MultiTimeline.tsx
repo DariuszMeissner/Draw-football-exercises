@@ -14,7 +14,8 @@ interface MultiTimelineProps {
   setSelectedId: (id: number | null) => void;
   keyFrameActive: { objId: number; keyIndex: number } | null;
   setKeyFrameActive: React.Dispatch<React.SetStateAction<{ objId: number; keyIndex: number } | null>>;
-  onSelectKeyframe: (objId: number, keyIndex: number) => void;
+  onSelectKeyframeSetFirstFrame: (objId: number, keyIndex: number) => void;
+  onMoveKeyframeTime: (objId: number, keyIndex: number, newTime: number) => void;
 }
 
 const HEADER_WIDTH = 140;
@@ -33,7 +34,8 @@ const MultiTimeline: React.FC<MultiTimelineProps> = ({
   setSelectedId,
   keyFrameActive,
   setKeyFrameActive,
-  onSelectKeyframe,
+  onSelectKeyframeSetFirstFrame,
+  onMoveKeyframeTime,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const [dragging, setDragging] = useState<{ objId: number; keyIndex: number } | null>(null);
@@ -50,12 +52,28 @@ const MultiTimeline: React.FC<MultiTimelineProps> = ({
     const ro = new ResizeObserver(() => update());
     ro.observe(el);
 
-    // cleanup
     return () => ro.disconnect();
   }, [containerRef.current]);
 
   const timelineWidth = Math.max(containerWidth - HEADER_WIDTH, 1);
+
   const handleMouseMove = (e: MouseEvent) => {
+    if (!dragging || !containerRef.current) return;
+
+    const rect = containerRef.current.getBoundingClientRect();
+    let x = e.clientX - rect.left - HEADER_WIDTH;
+    if (x < 0) x = 0;
+    if (x > timelineWidth) x = timelineWidth;
+
+    const newTime = (x / timelineWidth) * duration;
+    const obj = objects.find((o) => o.id === dragging.objId);
+    if (!obj || !obj.keyframes) return;
+
+    // Update timeline visually + data
+    onMoveKeyframeTime(dragging.objId, dragging.keyIndex, newTime);
+  };
+
+  const handleMouseClick = (e: MouseEvent) => {
     if (!dragging || !containerRef.current) return;
 
     const rect = containerRef.current.getBoundingClientRect();
@@ -77,9 +95,11 @@ const MultiTimeline: React.FC<MultiTimelineProps> = ({
 
   useEffect(() => {
     if (dragging) {
+      window.addEventListener('click', handleMouseClick);
       window.addEventListener('mousemove', handleMouseMove);
       window.addEventListener('mouseup', handleMouseUp);
       return () => {
+        window.removeEventListener('click', handleMouseClick);
         window.removeEventListener('mousemove', handleMouseMove);
         window.removeEventListener('mouseup', handleMouseUp);
       };
@@ -202,7 +222,7 @@ const MultiTimeline: React.FC<MultiTimelineProps> = ({
                     setDragging({ objId: obj.id, keyIndex });
                     setSelectedId(obj.id);
                     setKeyFrameActive({ objId: obj.id, keyIndex });
-                    onSelectKeyframe(obj.id, keyIndex);
+                    onSelectKeyframeSetFirstFrame(obj.id, keyIndex);
                   }}
                   style={{
                     position: 'absolute',
