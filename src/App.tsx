@@ -29,7 +29,7 @@ import {
   STEP_SIZE_RADIUS,
   WIDTH_INIT,
 } from './config/config';
-import { drawCircleOutline, drawObject, drawPlayerRing } from './helpers/canvasDrawHelpers';
+import { drawCircleOutline, drawObject, drawPlayerRing, drawSelectionRecetangle } from './helpers/canvasDrawHelpers';
 
 function App() {
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -64,6 +64,16 @@ function App() {
   const [contextMenuPos, setContextMenuPos] = useState<{ x: number; y: number } | null>(null);
   const [pitchFrames, setPitchFrames] = useState<HTMLImageElement[]>([]);
   const [currentPitch, setCurrentPitch] = useState<string>();
+
+  // recetangle selection state
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [selectionRect, setSelectionRect] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const startRef = useRef<{ x: number; y: number } | null>(null);
+
+  // multiple drag ref
+  const dragStartRef = useRef<{ x: number; y: number } | null>(null);
+  const initialPositionsRef = useRef<Record<string, { x: number; y: number }>>({});
 
   const { canvasWidth, canvasHeight } = useResponsiveCanvas((scaleRatio) => {
     setLayers((prev) =>
@@ -147,30 +157,43 @@ function App() {
 
   useEffect(() => {
     if (ctx) redraw();
-  }, [ctx, layers, selectedId, canvasWidth, canvasHeight]);
+  }, [ctx, layers, selectedId, canvasWidth, canvasHeight, selectionRect, isSelecting, selectedIds]);
 
   const handleKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
+      e.preventDefault();
       setSelectedId(null);
       setKeyFrameActive(null);
       setContextMenuPos(null);
     }
 
     if (e.key === 'Delete' && selectedId) {
+      e.preventDefault();
       deleteLayer(selectedId);
+    }
+
+    if (e.ctrlKey && e.key === 'd') {
+      e.preventDefault();
+      duplicateSelected();
     }
   };
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [selectedId]);
+  }, [selectedId, selectedIds]);
 
   useEffect(() => {
     if (appMode === 'image') {
       restoreFirstKeyframe();
     }
   }, [appMode]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    canvas.style.cursor = dragging ? 'grabbing' : 'default';
+  }, [dragging]);
 
   const handleDuplicateObject = () => {
     if (!selectedObject) return;
@@ -183,6 +206,23 @@ function App() {
     setLayers((prev) => [...prev, copyObj]);
     setSelectedId(newId);
     setSelectedObject(copyObj);
+  };
+
+  const duplicateSelected = () => {
+    if (selectedIds.length === 0) return;
+
+    const newObjects = layers
+      .filter((o) => selectedIds.includes(o.id))
+      .map((o) => ({
+        ...o,
+        id: ++idRef.current,
+        x: o.x + 30, // small offset so copies don’t overlap
+        y: o.y + 30,
+        name: `${o.type} ${idRef.current}`,
+      }));
+
+    setLayers((prev) => [...prev, ...newObjects]);
+    setSelectedIds(newObjects.map((o) => o.id)); // select newly copied ones
   };
 
   const restoreFirstKeyframe = () => {
@@ -207,6 +247,15 @@ function App() {
       const clickedId = getClickedObject(x, y, layers);
       let currObj = layers.find((obj) => obj.id === clickedId);
 
+      if (!clickedId) {
+        setIsSelecting(true);
+        startRef.current = { x, y };
+        setSelectionRect({ x, y, w: 0, h: 0 });
+      } else {
+        setIsSelecting(false);
+        startRef.current = null;
+      }
+
       // FIX: if no direct hit but selected player exists → check if ring was clicked
       if (!currObj && selectedObject?.type === 'player' && isClickOnRing(x, y, selectedObject)) {
         currObj = selectedObject;
@@ -214,6 +263,17 @@ function App() {
 
       if (currObj) {
         // If player ring clicked → rotation mode
+        if (clickedId && selectedIds.includes(clickedId)) {
+          // Start moving all selected objects
+          dragStartRef.current = { x, y };
+          initialPositionsRef.current = Object.fromEntries(
+            layers.filter((o) => selectedIds.includes(o.id)).map((o) => [o.id, { x: o.x, y: o.y }])
+          );
+
+          setDragging(true);
+          return;
+        }
+
         if (currObj.type === 'player' && isClickOnRing(x, y, currObj)) {
           setSelectedId(currObj.id);
           setSelectedObject(currObj);
@@ -254,6 +314,33 @@ function App() {
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
+    if (isSelecting && startRef.current) {
+      const { x: startX, y: startY } = startRef.current;
+      const w = x - startX;
+      const h = y - startY;
+
+      // Update live selection rectangle
+      const newRect = { x: startX, y: startY, w, h };
+      setSelectionRect(newRect);
+    }
+
+    const debounceDragMultipleSelection = setTimeout(() => {
+      const dx = x - (dragStartRef?.current?.x || 0);
+      const dy = y - (dragStartRef?.current?.y || 0);
+
+      setLayers((prev) =>
+        prev.map((obj) => {
+          if (selectedIds.includes(obj.id)) {
+            const initial = initialPositionsRef.current[obj.id];
+            if (!initial) return obj;
+            return { ...obj, x: initial.x + dx, y: initial.y + dy };
+          }
+          return obj;
+        })
+      );
+      clearTimeout(debounceDragMultipleSelection);
+    }, DEBOUNCE);
+
     // ROTATION: live update
     if (isRotating && selectedId !== null) {
       const player = layers.find((obj) => obj.id === selectedId);
@@ -284,11 +371,49 @@ function App() {
   };
 
   const onMouseUp = () => {
+    if (dragging) {
+      dragStartRef.current = null;
+      initialPositionsRef.current = {};
+    }
+
+    // --- Rectangle selection release ---
+    if (isSelecting && selectionRect) {
+      const { x, y, w, h } = selectionRect;
+
+      // Normalize for negative drag directions
+      const minX = Math.min(x, x + w);
+      const maxX = Math.max(x, x + w);
+      const minY = Math.min(y, y + h);
+      const maxY = Math.max(y, y + h);
+
+      // Find all objects inside selection bounds
+      const inside = layers
+        .filter((o) => {
+          // Use object center as test point
+          const ox = o.x;
+          const oy = o.y;
+
+          // Optional: handle width/height if you want bounding box selection
+          const halfW = o.width ? o.width / 2 : 0;
+          const halfH = o.height ? o.height / 2 : 0;
+
+          // Check if object center OR bounding box is inside selection
+          return ox + halfW >= minX && ox - halfW <= maxX && oy + halfH >= minY && oy - halfH <= maxY;
+        })
+        .map((o) => o.id);
+
+      setSelectedIds(inside);
+      setIsSelecting(false);
+      setSelectionRect(null);
+    }
+
+    // --- Stop rotating ---
     if (isRotating) {
       setIsRotating(false);
       setRotationAngle(null);
     }
 
+    // --- Stop dragging ---
     setDragging(false);
   };
 
@@ -340,34 +465,39 @@ function App() {
     setContextMenuPos({ x, y: y + 50 }); // show menu immediately
   };
 
-  const redraw = () =>
-    // ctx: CanvasRenderingContext2D,
-    // layers: BaseObject[],
-    // selectedId: number | null,
-    // playerFrames: HTMLImageElement[],
-    // canvasWidth: number,
-    // canvasHeight: number
-    {
-      if (!ctx) return;
+  const redraw = () => {
+    if (!ctx) return;
 
-      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
-      ctx.fillStyle = 'transparent';
-      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+    ctx.fillStyle = 'transparent';
+    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-      for (const obj of layers) {
-        if (obj.hidden) continue;
+    for (const obj of layers) {
+      if (obj.hidden) continue;
 
-        if (obj.id === selectedId) {
-          if (obj.type === 'player') {
-            drawPlayerRing(ctx, obj);
-          } else if (obj.type === 'circle' && obj.radius) {
-            drawCircleOutline(ctx, obj);
-          }
+      if (obj.id === selectedId) {
+        if (obj.type === 'player') {
+          drawPlayerRing(ctx, obj);
+        } else if (obj.type === 'circle' && obj.radius) {
+          drawCircleOutline(ctx, obj);
         }
-
-        drawObject(ctx, obj, playerFrames);
       }
-    };
+
+      if (selectedIds.includes(obj.id)) {
+        if (obj.type === 'player') {
+          drawPlayerRing(ctx, obj);
+        }
+        if (obj.type === 'circle') {
+          drawCircleOutline(ctx, obj);
+        }
+      }
+
+      drawObject(ctx, obj, playerFrames);
+      if (!isRotating) {
+        drawSelectionRecetangle(ctx, selectionRect);
+      }
+    }
+  };
 
   const addKeyframe = () => {
     if (!selectedId) return;

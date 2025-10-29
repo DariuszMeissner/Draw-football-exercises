@@ -70,3 +70,18 @@ export function drawObject(ctx: CanvasRenderingContext2D, obj: BaseObject, playe
 
   ctx.restore();
 }
+
+export function drawSelectionRecetangle(
+  ctx: CanvasRenderingContext2D,
+  selectionRect: { x: number; y: number; w: number; h: number } | null
+) {
+  if (!selectionRect) return;
+
+  const { x, y, w, h } = selectionRect;
+  ctx.save();
+  ctx.strokeStyle = 'rgba(60, 255, 255, 0.6)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6]);
+  ctx.strokeRect(x, y, w, h);
+  ctx.restore();
+}
