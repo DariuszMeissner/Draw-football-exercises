@@ -1,23 +1,6 @@
+import { directions } from '../config/config';
 import { BaseObject, PlayerFrameName } from '../types/types';
-import { getPlayerRingGeometry } from '../utils/playerGeometry';
-
-export const PLAYER_DIRECTIONS = [
-  { frame: 'player-run-left', angle: Math.PI },
-  { frame: 'player-run-back-left', angle: (-3 * Math.PI) / 4 },
-  { frame: 'player-run-back', angle: -Math.PI / 2 },
-  { frame: 'player-run-back-right', angle: -Math.PI / 4 },
-  { frame: 'player-run-right', angle: 0 },
-  { frame: 'player-run-front-right', angle: Math.PI / 4 },
-  { frame: 'player-run-front', angle: Math.PI / 2 },
-  { frame: 'player-run-front-left', angle: (3 * Math.PI) / 4 },
-] as const;
-
-// ✅ Derived helpers
-export const directions = PLAYER_DIRECTIONS.map((d, index) => ({ ...d, index }));
-
-export const directionAngles = Object.fromEntries(PLAYER_DIRECTIONS.map(({ frame, angle }) => [frame, angle]));
-
-export const playerNamesHelper = PLAYER_DIRECTIONS.map((d) => d.frame);
+import { getPlayerRingGeometry } from '../utils/playerGeometryUtils';
 
 export const normalizeAngle = (a: number) => {
   let angle = a;
@@ -43,8 +26,8 @@ export const findClosestFrame = (angle: number): { frameName: PlayerFrameName; i
 export const isClickOnRing = (x: number, y: number, obj: BaseObject) => {
   const { centerX, centerY, radiusX, radiusY } = getPlayerRingGeometry(obj);
 
-  const inner = 0.5;
-  const outer = 1.6;
+  const inner = 0.4;
+  const outer = 1.2;
 
   const dx = x - centerX;
   const dy = y - centerY;

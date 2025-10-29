@@ -1,9 +1,9 @@
 import { BaseObject } from '../types/types';
 
 type SideBarProps = {
-  selectedId: number | null;
   layers: BaseObject[];
-  selectedObject?: BaseObject;
+  selectedId: number | null;
+  handleDuplicateObject: () => void;
   setSelectedId: (id: number) => void;
   moveLayerUp: (id: number) => void;
   moveLayerDown: (id: number) => void;
@@ -14,10 +14,10 @@ export default function LayerSidebar({
   selectedId,
   layers,
   setSelectedId,
-  selectedObject,
   moveLayerUp,
   moveLayerDown,
   deleteLayer,
+  handleDuplicateObject,
 }: SideBarProps) {
   return (
     <div id="layers" style={{ minWidth: '220px', border: '1px solid #ccc', padding: '10px' }}>
@@ -40,11 +40,12 @@ export default function LayerSidebar({
         </div>
       ))}
 
-      {selectedObject && (
-        <div style={{ marginTop: 10 }} hidden={!selectedObject}>
-          <button onClick={() => selectedId && moveLayerUp(selectedId)}>Up</button>
-          <button onClick={() => selectedId && moveLayerDown(selectedId)}>Down</button>
-          <button onClick={() => selectedId && deleteLayer(selectedId)}>Remove</button>
+      {selectedId && (
+        <div style={{ marginTop: 10 }}>
+          <button onClick={() => moveLayerUp(selectedId)}>Up</button>
+          <button onClick={() => moveLayerDown(selectedId)}>Down</button>
+          <button onClick={() => deleteLayer(selectedId)}>Usuń</button>
+          <button onClick={handleDuplicateObject}>Powiel</button>
         </div>
       )}
     </div>

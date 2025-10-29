@@ -16,16 +16,20 @@ import LayerSidebar from './components/LayerSidebar';
 import ObjectToolsPanel from './components/ObjectContextToolsPanel';
 import Toolbar from './components/Toolbar';
 import useResponsiveCanvas from './hooks/useResponsiveCanvas';
+import { findClosestFrame, getClickedObject, isClickOnRing, normalizeAngle } from './helpers/helpers';
 import {
-  directionAngles,
-  findClosestFrame,
-  getClickedObject,
-  isClickOnRing,
-  normalizeAngle,
+  DEBOUNCE,
+  DEFAULT_SIZE,
+  DURATION,
+  FORMAT,
+  HEIGHT_INIT,
   playerNamesHelper,
-} from './helpers/helpers';
-import { getPlayerRingGeometry } from './utils/playerGeometry';
-import { DEFAULT_SIZE, DURATION, FORMAT, HEIGHT_INIT, RADIUS_INIT, STEP_SIZE, WIDTH_INIT } from './config/config';
+  RADIUS_INIT,
+  STEP_SIZE,
+  STEP_SIZE_RADIUS,
+  WIDTH_INIT,
+} from './config/config';
+import { drawCircleOutline, drawObject, drawPlayerRing } from './helpers/canvasDrawHelpers';
 
 function App() {
   const stageRef = useRef<HTMLDivElement | null>(null);
@@ -128,11 +132,11 @@ function App() {
       if (selectedObj) {
         setContextMenuPos({
           x: selectedObj.x,
-          y: selectedObj.y + 50, // menu below object
+          y: selectedObj.y + (selectedObj.radius || selectedObj.height) + STEP_SIZE, // menu below object
         });
       }
       clearTimeout(debounce);
-    }, 20);
+    }, DEBOUNCE);
   }, [selectedId, layers]);
 
   useEffect(() => {
@@ -167,6 +171,19 @@ function App() {
       restoreFirstKeyframe();
     }
   }, [appMode]);
+
+  const handleDuplicateObject = () => {
+    if (!selectedObject) return;
+
+    idRef.current += 1;
+    const newId = idRef.current;
+    const newX = selectedObject.x + 40;
+    const newY = selectedObject.y + 40;
+    const copyObj = { ...selectedObject, id: newId, x: newX, y: newY, name: `${selectedObject.type} ${newId}` };
+    setLayers((prev) => [...prev, copyObj]);
+    setSelectedId(newId);
+    setSelectedObject(copyObj);
+  };
 
   const restoreFirstKeyframe = () => {
     // Reset all objects to their first keyframe (if any)
@@ -263,7 +280,7 @@ function App() {
       setCurrentXY({ x, y });
       setLayers((prev) => prev.map((obj) => (obj.id === selectedId ? { ...obj, x, y } : obj)));
       clearTimeout(debounce);
-    }, 20);
+    }, DEBOUNCE);
   };
 
   const onMouseUp = () => {
@@ -323,87 +340,34 @@ function App() {
     setContextMenuPos({ x, y: y + 50 }); // show menu immediately
   };
 
-  const redraw = () => {
-    if (!ctx) return;
+  const redraw = () =>
+    // ctx: CanvasRenderingContext2D,
+    // layers: BaseObject[],
+    // selectedId: number | null,
+    // playerFrames: HTMLImageElement[],
+    // canvasWidth: number,
+    // canvasHeight: number
+    {
+      if (!ctx) return;
 
-    ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+      ctx.clearRect(0, 0, canvasWidth, canvasHeight);
+      ctx.fillStyle = 'transparent';
+      ctx.fillRect(0, 0, canvasWidth, canvasHeight);
 
-    ctx.fillStyle = 'transparent';
-    ctx.fillRect(0, 0, canvasWidth, canvasHeight);
+      for (const obj of layers) {
+        if (obj.hidden) continue;
 
-    layers.forEach((obj) => {
-      // skip invisible objects
-      if (obj.hidden) return;
+        if (obj.id === selectedId) {
+          if (obj.type === 'player') {
+            drawPlayerRing(ctx, obj);
+          } else if (obj.type === 'circle' && obj.radius) {
+            drawCircleOutline(ctx, obj);
+          }
+        }
 
-      // draw ring/oval
-      if (obj.type === 'player' && obj.id === selectedId) {
-        const frameIndex = obj.imageFrame ?? 0;
-        const playerDir = playerNamesHelper[frameIndex] || 'player-run-front';
-        const { centerX, centerY, radiusX, radiusY } = getPlayerRingGeometry(obj);
-
-        // === Draw elliptical ring ===
-        ctx.save();
-        ctx.beginPath();
-        ctx.ellipse(centerX, centerY, radiusX, radiusY, 0, 0, 2 * Math.PI);
-        ctx.lineWidth = 1;
-        ctx.strokeStyle = 'rgba(0, 200, 255, 0.7)';
-        ctx.fillStyle = 'rgba(0, 200, 255, 0.7)';
-        ctx.stroke();
-        ctx.fill();
-        ctx.restore();
-
-        // === Draw direction arrow ===
-        ctx.save();
-        ctx.translate(centerX, centerY);
-        ctx.scale(1, radiusY / radiusX); // flatten to match ellipse
-
-        // Arrow parameters
-        const angle = directionAngles[playerDir];
-        const arrowRadius = radiusX;
-        const baseRadius = 12;
-        const baseAngleLeft = angle + Math.PI * 0.6;
-        const baseAngleRight = angle - Math.PI * 0.6;
-
-        //arrow
-        ctx.beginPath();
-        ctx.moveTo(arrowRadius * Math.cos(angle), arrowRadius * Math.sin(angle));
-        ctx.lineTo(
-          (arrowRadius - baseRadius) * Math.cos(baseAngleLeft),
-          (arrowRadius - baseRadius) * Math.sin(baseAngleLeft)
-        );
-        ctx.lineTo(
-          (arrowRadius - baseRadius) * Math.cos(baseAngleRight),
-          (arrowRadius - baseRadius) * Math.sin(baseAngleRight)
-        );
-        ctx.closePath();
-
-        ctx.fillStyle = 'rgba(255, 238, 0, 1)';
-        ctx.fill();
-
-        ctx.restore();
-      } else if (obj.type === 'circle' && obj.radius && obj.id === selectedId) {
-        ctx.strokeStyle = 'red';
-        ctx.beginPath();
-        ctx.arc(obj.x, obj.y, obj.radius + 5, 0, 2 * Math.PI);
-        ctx.stroke();
-        ctx.restore();
-      } else {
-        ctx.restore();
+        drawObject(ctx, obj, playerFrames);
       }
-
-      // draw object
-      ctx.fillStyle = obj.color;
-      ctx.beginPath();
-
-      if (obj.type === 'circle' && obj.radius) {
-        ctx.arc(obj.x, obj.y, obj.radius, 0, 2 * Math.PI);
-        ctx.fill();
-      } else if (obj.type === 'player') {
-        const frame = playerFrames[obj.imageFrame];
-        ctx.drawImage(frame, obj.x - obj.width / 2, obj.y - obj.height / 2, obj.width, obj.height);
-      }
-    });
-  };
+    };
 
   const addKeyframe = () => {
     if (!selectedId) return;
@@ -637,7 +601,7 @@ function App() {
     );
   };
 
-  const moveLayerUp = (id: number) => {
+  const moveLayerDown = (id: number) => {
     setLayers((prev) => {
       const idx = prev.findIndex((o) => o.id === id);
       if (idx === -1 || idx === prev.length - 1) return prev; // already top or not found
@@ -647,7 +611,7 @@ function App() {
     });
   };
 
-  const moveLayerDown = (id: number) => {
+  const moveLayerUp = (id: number) => {
     setLayers((prev) => {
       const idx = prev.findIndex((o) => o.id === id);
       if (idx <= 0) return prev; // already bottom or not found
@@ -735,7 +699,8 @@ function App() {
         const newHeight = adjustedSize * STEP_SIZE;
 
         if (obj.type === 'circle') {
-          const newObjCircle = { ...obj, radius: newWidth, size: adjustedSize };
+          const newRadius = adjustedSize * STEP_SIZE_RADIUS;
+          const newObjCircle = { ...obj, radius: newRadius, size: adjustedSize };
           setSelectedObject(newObjCircle);
           return newObjCircle;
         }
@@ -792,6 +757,7 @@ function App() {
           />
 
           <CanvasContextMenu
+            handleDuplicateObject={handleDuplicateObject}
             contextMenuPos={contextMenuPos}
             handleObjectSizeChange={handleObjectSizeChange}
             handleFrameChange={handleFrameChange}
@@ -804,10 +770,10 @@ function App() {
           selectedId={selectedId}
           layers={layers}
           setSelectedId={setSelectedId}
-          selectedObject={selectedObject}
           moveLayerUp={moveLayerUp}
           moveLayerDown={moveLayerDown}
           deleteLayer={deleteLayer}
+          handleDuplicateObject={handleDuplicateObject}
         />
       </div>
 

@@ -4,6 +4,7 @@ type CanvasContextMenuProps = {
   contextMenuPos: { x: number; y: number } | null;
   handleObjectSizeChange: (delta: number) => void;
   handleFrameChange: (delta: number) => void;
+  handleDuplicateObject: (id: number) => void;
   deleteLayer: (id: number) => void;
   selectedObject?: BaseObject;
 };
@@ -12,6 +13,7 @@ export default function CanvasContextMenu({
   contextMenuPos,
   handleObjectSizeChange,
   handleFrameChange,
+  handleDuplicateObject,
   deleteLayer,
   selectedObject,
 }: CanvasContextMenuProps) {
@@ -33,7 +35,11 @@ export default function CanvasContextMenu({
       {/* <div hidden={selectedObject?.type === 'circle'}>
         <button onClick={() => handleFrameChange(-1)}>-</button>
         <button onClick={() => handleFrameChange(1)}>+</button>
-      </div> */}
+        </div> */}
+
+      <div>
+        <button onClick={() => selectedObject && handleDuplicateObject(selectedObject.id)}>Powiel</button>
+      </div>
 
       <div>
         <button onClick={() => selectedObject && deleteLayer(selectedObject.id)}>Usuń</button>
