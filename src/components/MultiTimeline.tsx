@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { BaseObject } from '../common/types';
+import { BaseObject } from '../types/types';
 
 interface MultiTimelineProps {
   objects: BaseObject[];
@@ -104,9 +104,6 @@ const MultiTimeline: React.FC<MultiTimelineProps> = ({
         window.removeEventListener('mouseup', handleMouseUp);
       };
     }
-    // cleanup when dragging becomes null
-    return;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dragging, timelineWidth, duration, objects]);
 
   return (
