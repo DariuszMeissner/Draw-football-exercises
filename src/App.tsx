@@ -381,7 +381,7 @@ function App() {
         ctx.fill();
 
         ctx.restore();
-      } else if (obj.type === 'circle' && obj.radius) {
+      } else if (obj.type === 'circle' && obj.radius && obj.id === selectedId) {
         ctx.strokeStyle = 'red';
         ctx.beginPath();
         ctx.arc(obj.x, obj.y, obj.radius + 5, 0, 2 * Math.PI);
@@ -398,9 +398,6 @@ function App() {
       if (obj.type === 'circle' && obj.radius) {
         ctx.arc(obj.x, obj.y, obj.radius, 0, 2 * Math.PI);
         ctx.fill();
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = 2;
-        ctx.stroke();
       } else if (obj.type === 'player') {
         const frame = playerFrames[obj.imageFrame];
         ctx.drawImage(frame, obj.x - obj.width / 2, obj.y - obj.height / 2, obj.width, obj.height);
